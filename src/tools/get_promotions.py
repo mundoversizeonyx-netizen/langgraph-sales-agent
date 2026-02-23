@@ -5,7 +5,7 @@ from __future__ import annotations
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from src.models.catalog import get_catalog
+from src.repositories import get_repository
 
 
 @tool
@@ -16,8 +16,8 @@ def get_promotions(config: RunnableConfig) -> str:
     or when you want to proactively suggest promoted items.
     """
     tenant_id = config["configurable"]["tenant_id"]
-    catalog = get_catalog(tenant_id)
-    promos = catalog.get_promotions()
+    repo = get_repository()
+    promos = repo.get_promotions(tenant_id)
 
     if not promos:
         return "No active promotions at the moment."

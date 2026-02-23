@@ -5,7 +5,7 @@ from __future__ import annotations
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from src.models.catalog import get_catalog
+from src.repositories import get_repository
 
 
 @tool
@@ -19,8 +19,8 @@ def search_products(query: str, config: RunnableConfig) -> str:
         query: Search terms (product name, category, or description keywords).
     """
     tenant_id = config["configurable"]["tenant_id"]
-    catalog = get_catalog(tenant_id)
-    results = catalog.search(query)
+    repo = get_repository()
+    results = repo.search(tenant_id, query)
 
     if not results:
         return f"No products found for '{query}'. Try broader terms or ask me what's available."

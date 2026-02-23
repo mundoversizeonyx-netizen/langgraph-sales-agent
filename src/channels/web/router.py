@@ -1,46 +1,37 @@
-"""Custom Agent Studio — self-hosted web UI.
+"""Web channel adapter.
 
-Streams graph execution events via SSE so the frontend can
-show real-time token streaming, tool traces, and node activity.
-
-Run:
-    source .venv/bin/activate && python -m web.server
+Uses SSE streaming, keeping the existing Sales Studio API intact.
 """
-
-from __future__ import annotations
 
 import json
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.requests import Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from langchain_core.messages import HumanMessage
-from langgraph.checkpoint.memory import InMemorySaver
 
 from src.config.tenant_config import get_tenant, list_tenants
 from src.graphs.sales_graph import build_sales_graph
+from langgraph.checkpoint.memory import InMemorySaver
 
-app = FastAPI(title="Sales Agent Studio")
+router = APIRouter()
 
-# Compile with checkpointer for persistent threads
+# Keep graph checkpointing in memory for Web UI
 _checkpointer = InMemorySaver()
 _graph = build_sales_graph().compile(checkpointer=_checkpointer)
 
+# Serve the index.html from where we moved it
+# We'll put index.html inside src/channels/web/index.html
 WEB_DIR = Path(__file__).parent
 
 
-# ─── Pages ───────────────────────────────────────────────────
-
-@app.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 async def index():
     return (WEB_DIR / "index.html").read_text()
 
 
-# ─── API ─────────────────────────────────────────────────────
-
-@app.get("/api/tenants")
+@router.get("/api/tenants")
 async def tenants_list():
     result = []
     for tid in list_tenants():
@@ -56,15 +47,15 @@ async def tenants_list():
     return result
 
 
-@app.post("/api/chat")
+@router.post("/api/chat")
 async def chat(request: Request):
     body = await request.json()
     tenant_id = body["tenant_id"]
     thread_id = body.get("thread_id") or f"{tenant_id}:{uuid.uuid4().hex[:8]}"
     message = body["message"]
     image_url = body.get("image_url")
-
-    # Build content
+    
+    # Map to state input
     if image_url:
         content = [
             {"type": "text", "text": message or "What similar products do you have?"},
@@ -73,7 +64,25 @@ async def chat(request: Request):
     else:
         content = message
 
-    config = {"configurable": {"thread_id": thread_id, "tenant_id": tenant_id}}
+    config = {
+        "configurable": {
+            "thread_id": thread_id, 
+            "tenant_id": tenant_id
+        }
+    }
+    
+    # Let graph know about channel context
+    state_updates = {"channel": "web", "channel_user_id": thread_id}
+    # Currently astream_events doesn't let us pass initial keys easily except via messages, 
+    # but langgraph allows updating state if we do graph.update_state()
+    # Alternatively, just inject a HumanMessage.
+    
+    # We should add the state_updates inside the input dictionary:
+    input_data = {
+        "messages": [HumanMessage(content=content)],
+        "channel": "web",
+        "channel_user_id": thread_id
+    }
 
     def _evt(data: dict) -> str:
         return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -83,27 +92,24 @@ async def chat(request: Request):
 
         try:
             async for event in _graph.astream_events(
-                {"messages": [HumanMessage(content=content)]},
+                input_data,
                 config=config,
                 version="v2",
             ):
                 kind = event["event"]
                 name = event.get("name", "")
 
-                # Node lifecycle
                 if kind == "on_chain_start" and name in ("assistant", "tools"):
                     yield _evt({"type": "node_start", "node": name})
 
                 elif kind == "on_chain_end" and name in ("assistant", "tools"):
                     yield _evt({"type": "node_end", "node": name})
 
-                # Token streaming
                 elif kind == "on_chat_model_stream":
                     chunk = event["data"]["chunk"]
                     if hasattr(chunk, "content") and isinstance(chunk.content, str) and chunk.content:
                         yield _evt({"type": "token", "content": chunk.content})
 
-                # LLM completion
                 elif kind == "on_chat_model_end":
                     out = event["data"]["output"]
                     usage = {}
@@ -115,13 +121,9 @@ async def chat(request: Request):
                         }
                     tool_calls = []
                     if hasattr(out, "tool_calls") and out.tool_calls:
-                        tool_calls = [
-                            {"name": tc["name"], "args": tc["args"]}
-                            for tc in out.tool_calls
-                        ]
+                        tool_calls = [{"name": tc["name"], "args": tc["args"]} for tc in out.tool_calls]
                     yield _evt({"type": "llm_end", "usage": usage, "tool_calls": tool_calls})
 
-                # Tool lifecycle
                 elif kind == "on_tool_start":
                     inp = event["data"].get("input", {})
                     yield _evt({
@@ -145,10 +147,3 @@ async def chat(request: Request):
         yield _evt({"type": "done"})
 
     return StreamingResponse(stream(), media_type="text/event-stream")
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    print("🚀 Sales Agent Studio → http://localhost:3000")
-    uvicorn.run(app, host="0.0.0.0", port=3000)

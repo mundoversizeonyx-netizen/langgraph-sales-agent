@@ -26,3 +26,5 @@ class SalesAgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     matched_products: list[dict]
     product_images: list[str]
+    channel: str
+    channel_user_id: str

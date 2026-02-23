@@ -5,7 +5,7 @@ from __future__ import annotations
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from src.models.catalog import get_catalog
+from src.repositories import get_repository
 
 
 @tool
@@ -19,8 +19,8 @@ def send_product_image(product_id: str, config: RunnableConfig) -> str:
         product_id: The unique product ID (e.g. "bouquet-001" or "phone-001").
     """
     tenant_id = config["configurable"]["tenant_id"]
-    catalog = get_catalog(tenant_id)
-    product = catalog.get_by_id(product_id)
+    repo = get_repository()
+    product = repo.get_by_id(tenant_id, product_id)
 
     if not product:
         return f"Product '{product_id}' not found."

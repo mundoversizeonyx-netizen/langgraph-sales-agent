@@ -5,7 +5,7 @@ from __future__ import annotations
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from src.models.catalog import get_catalog
+from src.repositories import get_repository
 
 
 @tool
@@ -20,8 +20,8 @@ def search_by_image(image_description: str, config: RunnableConfig) -> str:
                            (e.g. "red roses in a glass vase" or "silver laptop").
     """
     tenant_id = config["configurable"]["tenant_id"]
-    catalog = get_catalog(tenant_id)
-    results = catalog.find_similar(image_description)
+    repo = get_repository()
+    results = repo.find_similar(tenant_id, image_description)
 
     if not results:
         return "No similar products found. I can show you our full catalog instead."

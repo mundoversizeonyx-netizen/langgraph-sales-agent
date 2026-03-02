@@ -30,6 +30,23 @@ Customer on Web      → E-commerce "Alex" (Llama 3, en) → visual product sear
 
 ---
 
+## Built in the real world
+
+This isn't a tutorial project. I've been building AI sales agents for real businesses — flower shops, restaurants, e-commerce stores. Every client starts with this exact codebase, and I add integrations on top.
+
+The pattern is always the same:
+1. Drop a `config.yaml` with the business persona and rules
+2. Load the product catalog into `products.json`
+3. Connect the channel (usually Telegram first, then Instagram/WhatsApp)
+4. Go live in a day
+
+This repo is the starting point I keep coming back to — so I'm open-sourcing it.
+
+> **Need to deploy this for your business?**
+> Reach out → [github.com/yerdaulet-damir](https://github.com/yerdaulet-damir) or open an issue describing your use case.
+
+---
+
 ## Architecture
 
 ![Architecture Diagram](assets/architecture.png)

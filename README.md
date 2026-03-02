@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🤖 Enterprise Sales Agent
+# 🤖 LangGraph Sales Agent
 
 **Multi-tenant AI sales agent framework powered by LangGraph**
 
@@ -141,7 +141,7 @@ enterprise-agents/sales/
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/enterprise-sales-agent
+git clone https://github.com/yerdaulet-damir/langgraph-sales-agent
 cd enterprise-sales-agent
 
 python -m venv .venv && source .venv/bin/activate

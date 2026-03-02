@@ -69,3 +69,11 @@ htmlcov/
 *.tmp
 *.bak
 *.swp
+
+# Eval / test reports
+eval_report.html
+eval_sales_test.py
+
+# Internal agent workflow files (Antigravity)
+.agent/
+.claude/

@@ -13,6 +13,11 @@ from src.channels.instagram.router import router as instagram_router
 
 app = FastAPI(title="Multi-Channel Sales Agent")
 
+@app.get("/health")
+@app.head("/health")
+async def health():
+    return {"status": "ok"}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,5 +37,5 @@ app.include_router(instagram_router, prefix="/webhooks/instagram")
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Sales Agent (Multi-Channel) starting on http://localhost:3000")
+    print("ðŸš€ Sales Agent (Multi-Channel) starting on http://localhost:3000")
     uvicorn.run("src.app:app", host="0.0.0.0", port=3000, reload=False)

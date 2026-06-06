@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, BackgroundTasks
 from src.channels.whatsapp.adapter import WhatsAppAdapter
 from src.graphs.sales_graph import compile_sales_graph
 from src.models.message import OutboundMessage
-import traceback
+import traceback, json
 
 router = APIRouter()
 adapter = WhatsAppAdapter()
@@ -24,18 +24,21 @@ async def process_message(payload: dict):
             }}
         )
         reply_text = result["messages"][-1].content
-        print(f"[Router] Respuesta generada: {reply_text[:100]}")
+        print(f"[Router] Respuesta: {reply_text[:100]}")
         outbound = OutboundMessage(text=reply_text)
         await adapter.send_reply(inbound.channel_user_id, outbound)
     except Exception as e:
-        print(f"[Router] ERROR CRITICO: {e}")
+        print(f"[Router] ERROR: {e}")
         print(traceback.format_exc())
 
 @router.post("")
 async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     payload = await request.json()
     event = payload.get("event", "")
-    print(f"[Router] Evento recibido: {event}")
-    if event == "messages.upsert" and not payload.get("data", {}).get("key", {}).get("fromMe", False):
-        background_tasks.add_task(process_message, payload)
+    print(f"[Router] Evento: {event}")
+    if event == "messages.upsert":
+        from_me = payload.get("data", {}).get("key", {}).get("fromMe", False)
+        print(f"[Router] fromMe={from_me} — payload completo: {json.dumps(payload)[:500]}")
+        if not from_me:
+            background_tasks.add_task(process_message, payload)
     return {"status": "ok"}

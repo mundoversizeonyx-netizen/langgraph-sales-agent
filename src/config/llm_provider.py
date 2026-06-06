@@ -1,32 +1,13 @@
-"""LLM provider factory.
-
-Clean, modular provider system. Each tenant picks their provider
-and model in config.yaml. Adding a new provider = one elif branch.
-
-Supported providers:
-  - openai   → ChatOpenAI  (gpt-4o-mini, gpt-4o, etc.)
-  - anthropic → ChatAnthropic (claude-sonnet, claude-haiku, etc.)
-"""
-
-from __future__ import annotations
-
+﻿from __future__ import annotations
 from langchain_core.language_models import BaseChatModel
-
 from src.config.tenant_config import TenantConfig
 
-
 def create_llm(tenant_config: TenantConfig) -> BaseChatModel:
-    """Create an LLM instance based on tenant config.
-
-    The provider is determined by the `llm.provider` field in config.yaml.
-    Each provider maps to a LangChain chat model class.
-    """
     cfg = tenant_config.llm
     provider = cfg.provider.lower()
 
     if provider == "openai":
         from langchain_openai import ChatOpenAI
-
         return ChatOpenAI(
             model=cfg.model,
             temperature=cfg.temperature,
@@ -35,14 +16,34 @@ def create_llm(tenant_config: TenantConfig) -> BaseChatModel:
 
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
-
         return ChatAnthropic(
             model=cfg.model,
             temperature=cfg.temperature,
             max_tokens=cfg.max_tokens,
         )
 
+    if provider == "mistral":
+        from langchain_mistralai import ChatMistralAI
+        return ChatMistralAI(
+            model=cfg.model,
+            temperature=cfg.temperature,
+            max_tokens=cfg.max_tokens,
+        )
+
+    if provider == "cloudflare":
+        from langchain_openai import ChatOpenAI
+        import os
+        account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID")
+        api_token = os.getenv("CLOUDFLARE_API_TOKEN")
+        return ChatOpenAI(
+            model=cfg.model,
+            temperature=cfg.temperature,
+            max_tokens=cfg.max_tokens,
+            base_url=f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
+            api_key=api_token,
+        )
+
     raise ValueError(
-        f"Unknown LLM provider: '{provider}'. "
-        f"Supported: openai, anthropic"
+        f"Proveedor LLM desconocido: '{provider}'. "
+        f"Soportados: openai, anthropic, mistral, cloudflare"
     )

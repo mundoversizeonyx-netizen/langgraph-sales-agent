@@ -1,35 +1,33 @@
-"""WhatsApp webhook router."""
-
-from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import PlainTextResponse
-
+﻿"""WhatsApp webhook router para Evolution API."""
+from fastapi import APIRouter, Request, BackgroundTasks
 from src.channels.whatsapp.adapter import WhatsAppAdapter
+from src.graphs.sales_graph import compile_sales_graph
+from src.models.message import OutboundMessage
+import asyncio
 
 router = APIRouter()
 adapter = WhatsAppAdapter()
+graph = compile_sales_graph()
 
-
-@router.get("", response_class=PlainTextResponse)
-async def verify_webhook(request: Request):
-    """WhatsApp webhook verification."""
-    mode = request.query_params.get("hub.mode")
-    token = request.query_params.get("hub.verify_token")
-    challenge = request.query_params.get("hub.challenge")
-    
-    if mode == "subscribe" and token == "your_verify_token_here":
-        return challenge
-    raise HTTPException(status_code=403, detail="Forbidden")
-
+async def process_message(payload: dict):
+    inbound = adapter.parse_webhook(payload)
+    if not inbound.text:
+        return
+    result = await graph.ainvoke(
+        {"messages": [("user", inbound.text)]},
+        config={"configurable": {
+            "thread_id": inbound.thread_id,
+            "tenant_id": inbound.tenant_id
+        }}
+    )
+    reply_text = result["messages"][-1].content
+    outbound = OutboundMessage(text=reply_text)
+    await adapter.send_reply(inbound.channel_user_id, outbound)
 
 @router.post("")
-async def receive_webhook(request: Request):
-    """Receive messages from WhatsApp."""
+async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     payload = await request.json()
-    inbound_msg = adapter.parse_webhook(payload)
-    
-    # Real integration:
-    # 1. Start background task to invoke graph using `inbound_msg`.
-    # 2. Graph outputs an OutboundMessage.
-    # 3. Adapter uses send_reply to send it back.
-    
+    event = payload.get("event", "")
+    if event == "messages.upsert" and not payload.get("data", {}).get("key", {}).get("fromMe", False):
+        background_tasks.add_task(process_message, payload)
     return {"status": "ok"}

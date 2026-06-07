@@ -1,10 +1,50 @@
-﻿[
-  {"id":"prod-001","name":"Camiseta Oversize","description":"Camiseta oversize unisex en algodón 100%. Tallas S, M, L, XL. Colores: negro, blanco, gris, verde.","price":45000,"currency":"COP","category":"ropa","tags":["camiseta","oversize","unisex","casual"],"is_promoted":true,"promotion_text":"🔥 Más vendida! Envío gratis en pedidos de 2 o más"},
-  {"id":"prod-002","name":"Jean Mom Fit","description":"Jean mom fit tiro alto para mujer. Tallas 26 al 32. Colores: azul clásico, negro, gris.","price":89000,"currency":"COP","category":"ropa","tags":["jean","mujer","mom fit","tiro alto"],"is_promoted":false,"promotion_text":""},
-  {"id":"prod-003","name":"Hoodie Premium","description":"Hoodie con capucha en felpa suave. Unisex. Tallas S, M, L, XL. Colores: negro, vino, verde militar.","price":75000,"currency":"COP","category":"ropa","tags":["hoodie","sudadera","capucha","premium"],"is_promoted":true,"promotion_text":"⚡ 2x1 en color negro esta semana"},
-  {"id":"prod-004","name":"Short Deportivo","description":"Short deportivo con bolsillos. Hombre y mujer. Tallas S, M, L, XL. Colores: negro, gris, azul.","price":35000,"currency":"COP","category":"ropa","tags":["short","deportivo","gym","casual"],"is_promoted":false,"promotion_text":""},
-  {"id":"prod-005","name":"Conjunto Deportivo","description":"Conjunto top + leggins de licra compresión. Para mujer. Tallas S, M, L. Colores: negro, morado, rosado.","price":95000,"currency":"COP","category":"ropa","tags":["conjunto","deportivo","licra","mujer","gym"],"is_promoted":true,"promotion_text":"🎁 Incluye bolsa de regalo"},
-  {"id":"prod-006","name":"Gorra Bordada","description":"Gorra dad hat con bordado personalizado. Ajustable. Colores: negro, blanco, beige, verde.","price":28000,"currency":"COP","category":"accesorios","tags":["gorra","bordada","accesorio","unisex"],"is_promoted":false,"promotion_text":""},
-  {"id":"prod-007","name":"Maleta Urbana","description":"Maleta urbana impermeable 20L con puerto USB. Colores: negro, gris, azul marino.","price":120000,"currency":"COP","category":"accesorios","tags":["maleta","urbana","impermeable","USB"],"is_promoted":false,"promotion_text":""},
-  {"id":"prod-008","name":"Pack 3 Medias","description":"Pack de 3 pares de medias de algodón con diseños. Tallas única. Varios diseños disponibles.","price":18000,"currency":"COP","category":"accesorios","tags":["medias","pack","algodón","diseño"],"is_promoted":true,"promotion_text":"🧦 Pack x3 al precio de 2"}
+[
+  {
+    "id": "prod-001",
+    "name": "Camiseta Oversized",
+    "description": "Camiseta Oversized unisex de corte amplio y relajado. Disponible en tela Qatar y Algodon Peruano. La tela Qatar ofrece caida perfecta y durabilidad. El Algodon Peruano es suave, transpirable y de alta calidad premium.",
+    "price": 80000,
+    "currency": "COP",
+    "category": "camisetas",
+    "materials": ["Tela Qatar", "Algodon Peruano"],
+    "sizes": ["S", "M", "L", "XL"],
+    "colors": ["Negro", "Blanco", "Gris", "Verde", "Azul marino", "Beige"],
+    "tags": ["camiseta", "oversized", "unisex", "casual", "premium"],
+    "is_promoted": false,
+    "promotion_text": "",
+    "image_url": "",
+    "stock": true
+  },
+  {
+    "id": "prod-002",
+    "name": "Camiseta Tipo Polo",
+    "description": "Camiseta Tipo Polo con cuello y botones. Elegante y versatil, ideal para look casual o seminformal. Disponible en tela Qatar y Algodon Peruano. Acabado premium con costuras reforzadas.",
+    "price": 90000,
+    "currency": "COP",
+    "category": "camisetas",
+    "materials": ["Tela Qatar", "Algodon Peruano"],
+    "sizes": ["S", "M", "L", "XL"],
+    "colors": ["Negro", "Blanco", "Azul marino", "Verde", "Vino", "Beige"],
+    "tags": ["polo", "camiseta", "unisex", "casual", "semiformal", "premium"],
+    "is_promoted": false,
+    "promotion_text": "",
+    "image_url": "",
+    "stock": true
+  },
+  {
+    "id": "prod-003",
+    "name": "Buso con Chompa",
+    "description": "Buso con chompa (cierre frontal completo) en felpa suave de alta calidad. Corte moderno con bolsillos laterales. Disponible en tela Qatar y Algodon Peruano. Abrigador, comodo y con excelente caida.",
+    "price": 120000,
+    "currency": "COP",
+    "category": "busos",
+    "materials": ["Tela Qatar", "Algodon Peruano"],
+    "sizes": ["S", "M", "L", "XL"],
+    "colors": ["Negro", "Gris", "Verde militar", "Azul marino", "Vino", "Beige"],
+    "tags": ["buso", "chompa", "cierre", "abrigador", "unisex", "premium"],
+    "is_promoted": false,
+    "promotion_text": "",
+    "image_url": "",
+    "stock": true
+  }
 ]

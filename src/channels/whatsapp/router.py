@@ -35,10 +35,16 @@ async def process_message(payload: dict):
 async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     payload = await request.json()
     event = payload.get("event", "")
-    print(f"[Router] Evento: {event}")
-    if event == "messages.upsert":
-        from_me = payload.get("data", {}).get("key", {}).get("fromMe", False)
-        print(f"[Router] fromMe={from_me} — payload completo: {json.dumps(payload)[:500]}")
-        if not from_me:
-            background_tasks.add_task(process_message, payload)
+    if event != "messages.upsert":
+        return {"status": "ignored"}
+    data = payload.get("data", {})
+    key = data.get("key", {})
+    if key.get("fromMe", False):
+        return {"status": "ignored"}
+    status = data.get("status", "")
+    if status in ("DELIVERY_ACK", "READ", "PLAYED"):
+        print(f"[Router] Ignorando status duplicado: {status}")
+        return {"status": "ignored"}
+    print(f"[Router] Procesando mensaje entrante")
+    background_tasks.add_task(process_message, payload)
     return {"status": "ok"}

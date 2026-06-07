@@ -4,6 +4,8 @@ Mounts all channel routers into a single FastAPI app.
 """
 
 from fastapi import FastAPI
+import asyncio
+from src.reconnect import ensure_instance_connected
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.channels.web.router import router as web_router
@@ -12,6 +14,10 @@ from src.channels.telegram.router import router as telegram_router
 from src.channels.instagram.router import router as instagram_router
 
 app = FastAPI(title="Multi-Channel Sales Agent")
+
+@app.on_event("startup")
+async def startup():
+    await ensure_instance_connected()
 
 @app.get("/health")
 @app.head("/health")
@@ -37,5 +43,5 @@ app.include_router(instagram_router, prefix="/webhooks/instagram")
 
 if __name__ == "__main__":
     import uvicorn
-    print("ðŸš€ Sales Agent (Multi-Channel) starting on http://localhost:3000")
+    print("Ã°Å¸Å¡â‚¬ Sales Agent (Multi-Channel) starting on http://localhost:3000")
     uvicorn.run("src.app:app", host="0.0.0.0", port=3000, reload=False)

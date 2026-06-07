@@ -8,13 +8,13 @@ import traceback
 router = APIRouter()
 adapter = WhatsAppAdapter()
 graph = compile_sales_graph()
+_processed = set()
 
 async def process_message(payload: dict):
     try:
         inbound = adapter.parse_webhook(payload)
         print(f"[Router] Mensaje de {inbound.channel_user_id}: {inbound.text}")
         if not inbound.text:
-            print("[Router] Texto vacio, ignorando")
             return
         result = await graph.ainvoke(
             {"messages": [("user", inbound.text)]},
@@ -29,12 +29,23 @@ async def process_message(payload: dict):
         print(traceback.format_exc())
 
 @router.post("")
-async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
+@router.post("/{event_name}")
+async def receive_webhook(request: Request, background_tasks: BackgroundTasks, event_name: str = ""):
     payload = await request.json()
-    event = payload.get("event", "")
-    print(f"[Router] Evento: {event}")
-    if event == "messages.upsert":
-        from_me = payload.get("data", {}).get("key", {}).get("fromMe", False)
-        if not from_me:
-            background_tasks.add_task(process_message, payload)
+    event = payload.get("event", "") or event_name.replace("-", ".")
+    if event != "messages.upsert":
+        return {"status": "ignored"}
+    from_me = payload.get("data", {}).get("key", {}).get("fromMe", False)
+    if from_me:
+        return {"status": "ignored"}
+    msg_id = payload.get("data", {}).get("key", {}).get("id", "")
+    if msg_id and msg_id in _processed:
+        print(f"[Router] Duplicado ignorado: {msg_id}")
+        return {"status": "ignored"}
+    if msg_id:
+        _processed.add(msg_id)
+        if len(_processed) > 1000:
+            _processed.clear()
+    print(f"[Router] Procesando mensaje entrante")
+    background_tasks.add_task(process_message, payload)
     return {"status": "ok"}

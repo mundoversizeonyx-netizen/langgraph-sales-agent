@@ -10,38 +10,52 @@ adapter = WhatsAppAdapter()
 graph = compile_sales_graph()
 _processed = set()
 
-PAYMENT_WORDS = ["ya pague", "ya pago", "hice el pago", "realice el pago", "te mando el comprobante", "te envio el comprobante", "comprobante enviado", "pague", "transferi"]
-
 async def process_message(payload: dict):
     try:
         data = payload.get("data", {})
         message = data.get("message", {})
         has_image = bool(message.get("imageMessage") or message.get("documentMessage"))
         inbound = adapter.parse_webhook(payload)
-        client_text = (inbound.text or "").lower().replace("[imagen]", "").strip()
+        client_text = (inbound.text or "").replace("[IMAGEN_CLIENTE]", "").strip()
 
         if has_image:
-            image_type = await adapter.handle_image_message(payload)
-            if image_type == "comprobante" or any(w in client_text for w in PAYMENT_WORDS):
+            analysis = await adapter.analyze_client_image(payload)
+            tipo = analysis.get("tipo", "otro")
+            detalle = analysis.get("detalle", "")
+            print(f"[Router] Imagen analizada - tipo: {tipo} | detalle: {detalle}")
+
+            if tipo == "comprobante":
                 await adapter.notify_owner(inbound.channel_user_id, "envio comprobante de pago")
-                reply = "Perfecto, recibido. Tu pedido queda en proceso y lo despachamos en 4 dias habiles."
+                reply = "Listo, recibido el comprobante. Tu pedido queda registrado y lo despachamos en 4 dias habiles, te avisamos cuando salga."
                 await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply))
                 return
+
+            if tipo == "prenda":
+                context = f"El cliente envio una imagen de una prenda. Lo que Gemini identifico en la imagen: {detalle}. "
+                if client_text:
+                    context += f"El cliente tambien escribio: {client_text}. "
+                context += "Usa esta informacion para asesorar al cliente sobre el producto de ONYX mas similar o confirmar su pedido si ya eligio talla."
+                user_input = context
             else:
                 if not client_text:
+                    reply = "Recibido, pero no logre identificar bien la imagen. Cuentame que prenda te interesa y en que talla."
+                    await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply))
                     return
-        
-        if not inbound.text or inbound.text == "[IMAGEN]":
-            return
+                user_input = client_text
+        else:
+            if not inbound.text or not inbound.text.strip():
+                return
+            user_input = inbound.text
 
-        print(f"[Router] Mensaje de {inbound.channel_user_id}: {client_text or inbound.text}")
+        print(f"[Router] Procesando: {user_input[:100]}")
         result = await graph.ainvoke(
-            {"messages": [("user", client_text or inbound.text)]},
+            {"messages": [("user", user_input)]},
             config={"configurable": {"thread_id": inbound.thread_id, "tenant_id": inbound.tenant_id}}
         )
         reply_text = result["messages"][-1].content
         print(f"[Router] Respuesta: {reply_text[:100]}")
         await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply_text))
+
     except Exception as e:
         print(f"[Router] ERROR: {e}")
         print(traceback.format_exc())
@@ -64,6 +78,5 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks, e
         _processed.add(msg_id)
         if len(_processed) > 1000:
             _processed.clear()
-    print(f"[Router] Procesando mensaje entrante")
     background_tasks.add_task(process_message, payload)
     return {"status": "ok"}

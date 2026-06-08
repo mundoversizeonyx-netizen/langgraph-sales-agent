@@ -67,10 +67,10 @@ shipping_info: |
   Fuera de Medellin: +10.000 COP adicionales.
   Cobertura nacional. Sin tienda fisica. Sin contraentrega.
 payment_info: |
-  Pago por Nequi o Bancolombia. Numero se da al momento del cierre.
+  Pago por Nequi al 3132721394. NUNCA inventes ni cambies este numero.
   Cliente envia diseno elegido + talla + comprobante de pago.
   Pedido se agenda al verificar comprobante.
-  Numero Nequi: PENDIENTE_CONFIGURAR
+  Numero Nequi: 3132721394
 notifications:
   owner_number: "573043898187"
   notify_on_payment: true

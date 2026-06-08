@@ -1,9 +1,11 @@
-"""WhatsApp adapter - Vision Gemini solo para imagenes del cliente."""
+"""WhatsApp adapter - Vision Gemini para comprobantes y disenos del cliente."""
 from datetime import datetime, timezone
-import httpx, os
+import httpx, os, re
 
 from src.channels.base import ChannelAdapter
 from src.models.message import InboundMessage, OutboundMessage
+
+NEQUI_NUMBER = "3132721394"
 
 class WhatsAppAdapter(ChannelAdapter):
     def parse_webhook(self, raw: dict) -> InboundMessage:
@@ -34,17 +36,22 @@ class WhatsAppAdapter(ChannelAdapter):
     async def _gemini_analyze(self, image_b64: str, mime: str, caption: str) -> str:
         keys = [os.getenv("GEMINI_API_KEY", ""), os.getenv("GEMINI_API_KEY_2", "")]
         prompt = (
-            "Eres experto en anime y ropa. Analiza esta imagen.\n"
-            "Si es un comprobante de pago bancario o transferencia, responde exactamente:\n"
-            "TIPO: comprobante\nANIME: ninguno\nPRENDA: ninguna\n\n"
-            "Si es una prenda de ropa, responde exactamente:\n"
+            "Analiza esta imagen con precision. Puede ser un comprobante de pago o una prenda de ropa.\n\n"
+            "Si es un comprobante de transferencia o pago bancario (Nequi, Bancolombia, etc), responde:\n"
+            "TIPO: comprobante\n"
+            f"NEQUI_OK: [si si el numero {NEQUI_NUMBER} aparece en la imagen, no si no aparece]\n"
+            "MONTO: [valor exacto que aparece en el comprobante, ejemplo: 90000 o 130000]\n"
+            "ANIME: ninguno\nPRENDA: ninguna\n\n"
+            "Si es una prenda de ropa con estampado de anime, responde:\n"
             "TIPO: [oversized | polo | buso | prenda]\n"
+            "NEQUI_OK: no\n"
+            "MONTO: ninguno\n"
             "ANIME: [nombre exacto del personaje y serie, o 'no identificado']\n"
             "PRENDA: [oversized | polo | buso | prenda]\n\n"
             "Si es otra cosa:\n"
-            "TIPO: otro\nANIME: ninguno\nPRENDA: ninguna\n\n"
+            "TIPO: otro\nNEQUI_OK: no\nMONTO: ninguno\nANIME: ninguno\nPRENDA: ninguna\n\n"
             f"Texto del cliente: '{caption}'\n"
-            "Responde SOLO las 3 lineas del formato. Nada mas."
+            "Responde SOLO las 5 lineas del formato. Nada mas."
         )
         body = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime, "data": image_b64}}]}]}
         for k in keys:
@@ -52,7 +59,7 @@ class WhatsAppAdapter(ChannelAdapter):
                 continue
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={k}"
-                async with httpx.AsyncClient(timeout=15) as client:
+                async with httpx.AsyncClient(timeout=20) as client:
                     r = await client.post(url, json=body)
                     if r.status_code == 200:
                         out = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -62,7 +69,7 @@ class WhatsAppAdapter(ChannelAdapter):
                         continue
             except Exception as e:
                 print(f"[Gemini] Error: {e}")
-        return "TIPO: otro\nANIME: ninguno\nPRENDA: ninguna"
+        return "TIPO: otro\nNEQUI_OK: no\nMONTO: ninguno\nANIME: ninguno\nPRENDA: ninguna"
 
     async def _download_image(self, raw: dict) -> tuple:
         evo_url = os.getenv("EVOLUTION_URL", "")
@@ -100,30 +107,36 @@ class WhatsAppAdapter(ChannelAdapter):
         message = data.get("message", {})
         caption = message.get("imageMessage", {}).get("caption", "")
         caption_lower = caption.lower()
-        payment_words = ["pague", "pago", "comprobante", "transferi", "ya pague", "hice el pago", "realice el pago"]
-        if any(w in caption_lower for w in payment_words):
-            return {"tipo": "comprobante", "anime": "ninguno", "prenda": "ninguna"}
+        payment_words = ["transferencia exitosa", "comprobante", "pague", "ya pague", "hice el pago", "realice el pago", "transferi"]
         image_b64, mime = await self._download_image(raw)
         if image_b64:
             result = await self._gemini_analyze(image_b64, mime, caption)
-            parsed = {"tipo": "otro", "anime": "no identificado", "prenda": "prenda"}
+            parsed = {"tipo": "otro", "nequi_ok": False, "monto": "", "anime": "no identificado", "prenda": "prenda"}
             for line in result.split("\n"):
                 line = line.strip()
                 if line.startswith("TIPO:"):
                     parsed["tipo"] = line.replace("TIPO:", "").strip().lower()
+                elif line.startswith("NEQUI_OK:"):
+                    parsed["nequi_ok"] = line.replace("NEQUI_OK:", "").strip().lower() == "si"
+                elif line.startswith("MONTO:"):
+                    parsed["monto"] = line.replace("MONTO:", "").strip()
                 elif line.startswith("ANIME:"):
                     parsed["anime"] = line.replace("ANIME:", "").strip()
                 elif line.startswith("PRENDA:"):
                     parsed["prenda"] = line.replace("PRENDA:", "").strip()
+            if parsed["tipo"] == "otro" and any(w in caption_lower for w in payment_words):
+                parsed["tipo"] = "comprobante"
+                parsed["nequi_ok"] = NEQUI_NUMBER in caption
             return parsed
-        return {"tipo": "prenda", "anime": "no identificado", "prenda": caption or "prenda"}
+        if any(w in caption_lower for w in payment_words):
+            return {"tipo": "comprobante", "nequi_ok": NEQUI_NUMBER in caption, "monto": "", "anime": "ninguno", "prenda": "ninguna"}
+        return {"tipo": "prenda", "nequi_ok": False, "monto": "", "anime": "no identificado", "prenda": caption or "prenda"}
 
     async def send_reply(self, channel_user_id: str, message: OutboundMessage) -> None:
         evo_url = os.getenv("EVOLUTION_URL", "")
         evo_key = os.getenv("EVOLUTION_API_KEY", "")
         instance = os.getenv("EVOLUTION_INSTANCE", "demo")
         if not evo_url:
-            print("[WhatsApp] ERROR: EVOLUTION_URL no configurado")
             return
         headers = {"apikey": evo_key, "Content-Type": "application/json"}
         reply_text = message.text or ""
@@ -144,7 +157,7 @@ class WhatsAppAdapter(ChannelAdapter):
             return
         headers = {"apikey": evo_key, "Content-Type": "application/json"}
         url = f"{evo_url}/message/sendText/{instance}"
-        msg = f"ONYX ALERTA - Cliente {channel_user_id} {motivo}. Revisa el chat."
+        msg = f"ONYX ALERTA - Cliente {channel_user_id}: {motivo}"
         async with httpx.AsyncClient(timeout=15) as client:
             await client.post(url, json={"number": owner, "text": msg}, headers=headers)
-            print(f"[WhatsApp] Alerta dueno: {motivo}")
+            print(f"[WhatsApp] Alerta dueno enviada")

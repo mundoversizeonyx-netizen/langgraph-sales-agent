@@ -10,6 +10,8 @@ adapter = WhatsAppAdapter()
 graph = compile_sales_graph()
 _processed = set()
 
+NEQUI_NUMBER = "3132721394"
+
 async def process_message(payload: dict):
     try:
         data = payload.get("data", {})
@@ -17,33 +19,45 @@ async def process_message(payload: dict):
         has_image = bool(message.get("imageMessage") or message.get("documentMessage"))
         inbound = adapter.parse_webhook(payload)
         client_text = (inbound.text or "").replace("[IMAGEN_CLIENTE]", "").strip()
+        client_text_lower = client_text.lower()
 
         if has_image:
             analysis = await adapter.analyze_client_image(payload)
             tipo = analysis.get("tipo", "otro")
             anime = analysis.get("anime", "")
             prenda = analysis.get("prenda", "")
-            print(f"[Router] Imagen - tipo: {tipo} | anime: {anime} | prenda: {prenda}")
+            nequi_ok = analysis.get("nequi_ok", False)
+            monto = analysis.get("monto", "")
+            print(f"[Router] Imagen - tipo:{tipo} anime:{anime} prenda:{prenda} nequi_ok:{nequi_ok} monto:{monto}")
 
             if tipo == "comprobante":
-                await adapter.notify_owner(inbound.channel_user_id, "envio comprobante de pago")
-                reply = "Listo, comprobante recibido. Tu pedido queda registrado y lo despachamos en 4 dias habiles, te avisamos cuando salga."
+                if nequi_ok:
+                    await adapter.notify_owner(
+                        inbound.channel_user_id,
+                        f"PAGO CONFIRMADO - Nequi {NEQUI_NUMBER} verificado. Monto: {monto}. Revisa el chat para procesar el pedido."
+                    )
+                    reply = "Perfecto, comprobante verificado al Nequi 3132721394. Tu pedido queda registrado y lo despachamos en 4 dias habiles, te avisamos cuando salga."
+                else:
+                    await adapter.notify_owner(
+                        inbound.channel_user_id,
+                        f"ALERTA - Cliente envio comprobante pero el numero Nequi no coincide con {NEQUI_NUMBER}. Revisar manualmente."
+                    )
+                    reply = "Recibo el comprobante, pero necesito verificar que el pago sea al Nequi 3132721394. Confirma que enviaste al numero correcto."
                 await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply))
                 return
 
-            if tipo in ("oversized", "polo", "buso"):
-                anime_info = f"anime identificado: {anime}" if anime and anime != "no identificado" else "anime no identificado en la imagen"
+            if tipo in ("oversized", "polo", "buso", "prenda"):
+                anime_info = f"personaje/anime identificado: {anime}" if anime and anime.lower() not in ("ninguno", "no identificado", "") else "anime no identificado en la imagen"
                 context = (
-                    f"El cliente envio una imagen de una prenda tipo {prenda}. "
+                    f"El cliente envio una captura de una camiseta tipo {prenda}. "
                     f"Gemini identifico: {anime_info}. "
                     f"{'El cliente escribio: ' + client_text + '. ' if client_text else ''}"
-                    f"Pregunta al cliente que talla quiere para confirmar el pedido. "
-                    f"No envies links de Drive. No inventes informacion."
+                    f"Pregunta la talla para confirmar el pedido. No ofrezcas enviar fotos. No uses markdown ni asteriscos."
                 )
                 user_input = context
             else:
                 if not client_text:
-                    reply = "No logre identificar la imagen. Cuentame que prenda te interesa de ONYX."
+                    reply = "Recibido, pero no identifique bien la imagen. Cual diseno te gusto del Instagram de ONYX?"
                     await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply))
                     return
                 user_input = client_text
@@ -58,6 +72,8 @@ async def process_message(payload: dict):
             config={"configurable": {"thread_id": inbound.thread_id, "tenant_id": inbound.tenant_id}}
         )
         reply_text = result["messages"][-1].content
+        import re
+        reply_text = re.sub(r'\*+([^*]+)\*+', r'\1', reply_text)
         print(f"[Router] Respuesta: {reply_text[:100]}")
         await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply_text))
 

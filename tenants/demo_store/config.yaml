@@ -56,7 +56,9 @@ agent:
     - "Cuando cliente confirme pago agradece brevemente e indica despacho en 4 dias habiles"
     - "Nunca confirmes recepcion de pago, da el numero Nequi 3132721394 y pide comprobante"
     - "Responde SOLO lo que el cliente pregunto, nunca agregues informacion extra no solicitada"
-    - "Si el cliente dice que no puede pagar por un medio, solo indicas los medios disponibles y sigues"
+    - "Si el cliente dice que no tiene Nequi, le dices amablemente que es el unico medio disponible y ofreces ayudarlo a crear una cuenta si lo necesita"
+    - "Nunca menciones Bancolombia ni transferencia bancaria"
+    - "Eres calida como una amiga cercana que vende, no como un agente de call center. Usa frases naturales como: claro que si, con gusto, listo, perfecto"
 products_info: |
   Catalogo ONYX - disenos exclusivos anime y cultura oriental:
   Camiseta Oversized: 90.000 COP | Tallas S M L XL
@@ -69,8 +71,8 @@ shipping_info: |
   Fuera de Medellin: +10.000 COP adicionales.
   Cobertura nacional. Sin tienda fisica. Sin contraentrega.
 payment_info: |
-  Pago por Nequi al 3132721394. NUNCA inventes ni cambies este numero.
-  Cliente envia diseno elegido + talla + comprobante de pago.
+  Pago UNICAMENTE por Nequi al 3132721394. NUNCA menciones Bancolombia ni transferencia bancaria. NUNCA inventes ni cambies este numero.
+  Cliente envia comprobante de pago al Nequi 3132721394.
   Pedido se agenda al verificar comprobante.
   Numero Nequi: 3132721394
 notifications:

@@ -1,11 +1,23 @@
-"""WhatsApp adapter para Evolution API (Baileys) - NO Meta Cloud API."""
+"""WhatsApp adapter para Evolution API - con vision Gemini para imagenes."""
 from datetime import datetime, timezone
-import httpx
-import os
+import httpx, os, base64, json
+
+EVO_URL = ""
+EVO_KEY = ""
+INSTANCE = ""
+OWNER = ""
+GEMINI_KEY = ""
+
+def _init_env():
+    global EVO_URL, EVO_KEY, INSTANCE, OWNER, GEMINI_KEY
+    EVO_URL = os.getenv("EVOLUTION_URL", "")
+    EVO_KEY = os.getenv("EVOLUTION_API_KEY", "")
+    INSTANCE = os.getenv("EVOLUTION_INSTANCE", "demo")
+    OWNER = os.getenv("OWNER_NUMBER", "573043898187")
+    GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
+
 from src.channels.base import ChannelAdapter
 from src.models.message import InboundMessage, OutboundMessage
-
-PAYMENT_KEYWORDS = ["comprobante", "pague", "pago", "transferi", "ya pague", "ya pago", "realice el pago", "hice el pago", "envio el comprobante"]
 
 class WhatsAppAdapter(ChannelAdapter):
     def parse_webhook(self, raw: dict) -> InboundMessage:
@@ -17,6 +29,10 @@ class WhatsAppAdapter(ChannelAdapter):
             or message.get("extendedTextMessage", {}).get("text")
             or ""
         )
+        has_image = bool(
+            message.get("imageMessage")
+            or message.get("documentMessage")
+        )
         phone = key.get("remoteJid", "").replace("@s.whatsapp.net", "").replace("@lid", "")
         tenant_id = os.getenv("DEFAULT_TENANT", "demo_store")
         return InboundMessage(
@@ -25,34 +41,86 @@ class WhatsAppAdapter(ChannelAdapter):
             channel_user_id=phone,
             tenant_id=tenant_id,
             thread_id=phone,
-            text=text,
+            text=text if not has_image else f"[IMAGEN]{text}",
             received_at=datetime.now(timezone.utc),
             raw_payload=raw
         )
 
+    async def _analyze_image_gemini(self, image_b64: str, mime: str, caption: str) -> str:
+        """Usa Gemini Flash para analizar si es comprobante de pago o foto de prenda."""
+        _init_env()
+        if not GEMINI_KEY:
+            return "imagen"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+        prompt = (
+            "Analiza esta imagen. Responde UNICAMENTE con una de estas palabras: "
+            "'comprobante' si es un recibo, transferencia o pago bancario, "
+            "'prenda' si es ropa o producto de moda, "
+            "'otro' si es cualquier otra cosa. "
+            f"Texto adicional del cliente: '{caption}'"
+        )
+        body = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {"inline_data": {"mime_type": mime, "data": image_b64}}
+                ]
+            }]
+        }
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(url, json=body)
+            if r.status_code == 200:
+                result = r.json()
+                text_out = result["candidates"][0]["content"]["parts"][0]["text"].strip().lower()
+                if "comprobante" in text_out:
+                    return "comprobante"
+                elif "prenda" in text_out:
+                    return "prenda"
+        return "otro"
+
+    async def _download_image(self, message: dict, client: httpx.AsyncClient) -> tuple:
+        """Descarga imagen desde Evolution API."""
+        _init_env()
+        img_msg = message.get("imageMessage", {})
+        if not img_msg:
+            return None, None
+        mime = img_msg.get("mimetype", "image/jpeg")
+        return None, mime
+
+    async def handle_image_message(self, raw: dict) -> str:
+        """Procesa mensaje con imagen y retorna tipo: comprobante/prenda/otro."""
+        data = raw.get("data", {})
+        message = data.get("message", {})
+        img_msg = message.get("imageMessage", {})
+        caption = img_msg.get("caption", "")
+        caption_lower = caption.lower()
+        payment_words = ["pague", "pago", "transferi", "comprobante", "ya pague", "listo pague", "hice el pago"]
+        if any(w in caption_lower for w in payment_words):
+            return "comprobante"
+        return "prenda"
+
     async def send_reply(self, channel_user_id: str, message: OutboundMessage) -> None:
-        evolution_url = os.getenv("EVOLUTION_URL", "")
-        evolution_api_key = os.getenv("EVOLUTION_API_KEY", "")
-        instance = os.getenv("EVOLUTION_INSTANCE", "default")
-        owner_number = os.getenv("OWNER_NUMBER", "573043898187")
-        if not evolution_url:
+        _init_env()
+        if not EVO_URL:
             print("[WhatsApp] ERROR: EVOLUTION_URL no configurado")
             return
-        headers = {"apikey": evolution_api_key, "Content-Type": "application/json"}
+        headers = {"apikey": EVO_KEY, "Content-Type": "application/json"}
         reply_text = message.text or ""
+        url = f"{EVO_URL}/message/sendText/{INSTANCE}"
         async with httpx.AsyncClient(timeout=30) as client:
-            # Enviar respuesta al cliente
-            url = f"{evolution_url}/message/sendText/{instance}"
-            payload = {"number": channel_user_id, "text": reply_text}
-            print(f"[WhatsApp] Enviando a {url} - numero: {channel_user_id}")
-            resp = await client.post(url, json=payload, headers=headers)
+            resp = await client.post(url, json={"number": channel_user_id, "text": reply_text}, headers=headers)
             if resp.status_code not in (200, 201):
                 print(f"[WhatsApp] Error: {resp.status_code} {resp.text}")
             else:
                 print(f"[WhatsApp] OK: {reply_text[:80]}")
-            # Notificar al dueno si el cliente menciona pago
-            msg_lower = reply_text.lower()
-            if any(kw in msg_lower for kw in ["comprobante", "pedido queda agendado", "pago recibido", "pago confirmado"]):
-                notif = f"ONYX ALERTA - Cliente {channel_user_id} confirmo pago. Revisa el chat."
-                await client.post(url, json={"number": owner_number, "text": notif}, headers=headers)
-                print(f"[WhatsApp] Notificacion enviada al dueno")
+
+    async def notify_owner(self, channel_user_id: str, motivo: str) -> None:
+        _init_env()
+        if not EVO_URL:
+            return
+        headers = {"apikey": EVO_KEY, "Content-Type": "application/json"}
+        url = f"{EVO_URL}/message/sendText/{INSTANCE}"
+        msg = f"ONYX ALERTA - Cliente {channel_user_id} {motivo}. Revisa el chat."
+        async with httpx.AsyncClient(timeout=15) as client:
+            await client.post(url, json={"number": OWNER, "text": msg}, headers=headers)
+            print(f"[WhatsApp] Alerta enviada al dueno: {motivo}")

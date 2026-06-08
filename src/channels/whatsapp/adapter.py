@@ -1,25 +1,6 @@
-"""WhatsApp adapter para Evolution API - Vision Gemini para imagenes del cliente."""
+"""WhatsApp adapter - Vision Gemini solo para imagenes del cliente."""
 from datetime import datetime, timezone
-import httpx, os, base64
-
-DRIVE_CATALOG = {
-    "buso_dama": {
-        "url": "https://drive.google.com/uc?export=view&id=1Y3mlU7uarKpz3VSbh2aqK4Ux2EKWh5V5",
-        "descripcion": "Buso con chompa dama - algodon 100%, diseno anime"
-    },
-    "buso_hombre": {
-        "url": "https://drive.google.com/uc?export=view&id=17o1dfQwWernIUvxrDNbGqhrYXPGH0vbg",
-        "descripcion": "Buso con chompa hombre - algodon 100%, diseno anime"
-    },
-    "oversized": {
-        "url": "https://drive.google.com/uc?export=view&id=1bXIyShTxpShjQOyewKFq4pLN_sosC6-4",
-        "descripcion": "Camiseta oversized - diseno anime exclusivo"
-    },
-    "polo": {
-        "url": "https://drive.google.com/uc?export=view&id=1qEObIVArr3-cv9Al6q-SLzYln-8dCmqW",
-        "descripcion": "Camiseta tipo polo - diseno anime exclusivo"
-    }
-}
+import httpx, os
 
 from src.channels.base import ChannelAdapter
 from src.models.message import InboundMessage, OutboundMessage
@@ -51,61 +32,50 @@ class WhatsAppAdapter(ChannelAdapter):
         )
 
     async def _gemini_analyze(self, image_b64: str, mime: str, caption: str) -> str:
-        """Analiza imagen del cliente con Gemini Vision. Detecta: comprobante, prenda/personaje anime, u otro."""
-        keys = [
-            os.getenv("GEMINI_API_KEY", ""),
-            os.getenv("GEMINI_API_KEY_2", "")
-        ]
+        keys = [os.getenv("GEMINI_API_KEY", ""), os.getenv("GEMINI_API_KEY_2", "")]
         prompt = (
-            "Eres un experto en anime y estampados de ropa. "
-            "Analiza EXCLUSIVAMENTE el estampado o print de la prenda en la imagen. "
-            "Ignora el fondo, el modelo, colores de tela, entorno. Solo el estampado y el tipo de prenda. "
-            "Responde UNICAMENTE en este formato exacto (dos lineas, nada mas):\n"
-            "TIPO: [oversized | polo | buso | comprobante | otro]\n"
-            "ANIME: [nombre exacto del personaje y serie anime del estampado, o 'no identificado' si no hay anime visible]\n"
+            "Eres experto en anime y ropa. Analiza esta imagen.\n"
+            "Si es un comprobante de pago bancario o transferencia, responde exactamente:\n"
+            "TIPO: comprobante\nANIME: ninguno\nPRENDA: ninguna\n\n"
+            "Si es una prenda de ropa, responde exactamente:\n"
+            "TIPO: [oversized | polo | buso | prenda]\n"
+            "ANIME: [nombre exacto del personaje y serie, o 'no identificado']\n"
+            "PRENDA: [oversized | polo | buso | prenda]\n\n"
+            "Si es otra cosa:\n"
+            "TIPO: otro\nANIME: ninguno\nPRENDA: ninguna\n\n"
             f"Texto del cliente: '{caption}'\n"
-            "Sé preciso con el anime: distingue Naruto de Dragon Ball Z de One Piece de Demon Slayer etc."
+            "Responde SOLO las 3 lineas del formato. Nada mas."
         )
-        body = {
-            "contents": [{"parts": [
-                {"text": prompt},
-                {"inline_data": {"mime_type": mime, "data": image_b64}}
-            ]}]
-        }
-        for key in keys:
-            if not key:
+        body = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime, "data": image_b64}}]}]}
+        for k in keys:
+            if not k:
                 continue
             try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={k}"
                 async with httpx.AsyncClient(timeout=15) as client:
                     r = await client.post(url, json=body)
                     if r.status_code == 200:
-                        text_out = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                        print(f"[Gemini] Resultado: {text_out}")
-                        return text_out
+                        out = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        print(f"[Gemini] {out}")
+                        return out
                     elif r.status_code == 429:
-                        print(f"[Gemini] Key 1 rate limit, probando key 2...")
                         continue
             except Exception as e:
                 print(f"[Gemini] Error: {e}")
-                continue
-        return "TIPO: otro\nDETALLE: no relacionado"
+        return "TIPO: otro\nANIME: ninguno\nPRENDA: ninguna"
 
-    async def _download_whatsapp_image(self, raw: dict) -> tuple:
-        """Descarga imagen del mensaje de WhatsApp via Evolution API."""
+    async def _download_image(self, raw: dict) -> tuple:
         evo_url = os.getenv("EVOLUTION_URL", "")
         evo_key = os.getenv("EVOLUTION_API_KEY", "")
         instance = os.getenv("EVOLUTION_INSTANCE", "demo")
         data = raw.get("data", {})
         message = data.get("message", {})
         img_msg = message.get("imageMessage", {})
-        if not img_msg:
+        if not img_msg or not evo_url:
             return None, "image/jpeg"
         mime = img_msg.get("mimetype", "image/jpeg")
-        msg_key = data.get("key", {})
-        msg_id = msg_key.get("id", "")
-        remote_jid = msg_key.get("remoteJid", "")
-        if not msg_id or not evo_url:
+        msg_id = data.get("key", {}).get("id", "")
+        if not msg_id:
             return None, mime
         try:
             async with httpx.AsyncClient(timeout=20) as client:
@@ -115,43 +85,43 @@ class WhatsAppAdapter(ChannelAdapter):
                     headers={"apikey": evo_key}
                 )
                 if r.status_code == 200:
-                    data_resp = r.json()
-                    b64 = data_resp.get("base64", "") or data_resp.get("data", "")
+                    resp = r.json()
+                    b64 = resp.get("base64", "") or resp.get("data", "")
                     if b64:
                         if "base64," in b64:
                             b64 = b64.split("base64,")[1]
                         return b64, mime
         except Exception as e:
-            print(f"[Download] Error descargando imagen: {e}")
+            print(f"[Download] Error: {e}")
         return None, mime
 
     async def analyze_client_image(self, raw: dict) -> dict:
-        """Analiza imagen del cliente. Retorna tipo y detalle."""
         data = raw.get("data", {})
         message = data.get("message", {})
         caption = message.get("imageMessage", {}).get("caption", "")
         caption_lower = caption.lower()
         payment_words = ["pague", "pago", "comprobante", "transferi", "ya pague", "hice el pago", "realice el pago"]
         if any(w in caption_lower for w in payment_words):
-            return {"tipo": "comprobante", "detalle": "pago"}
-        image_b64, mime = await self._download_whatsapp_image(raw)
+            return {"tipo": "comprobante", "anime": "ninguno", "prenda": "ninguna"}
+        image_b64, mime = await self._download_image(raw)
         if image_b64:
             result = await self._gemini_analyze(image_b64, mime, caption)
-            tipo = "otro"
-            detalle = "no relacionado"
+            parsed = {"tipo": "otro", "anime": "no identificado", "prenda": "prenda"}
             for line in result.split("\n"):
+                line = line.strip()
                 if line.startswith("TIPO:"):
-                    tipo = line.replace("TIPO:", "").strip().lower()
-                elif line.startswith("DETALLE:"):
-                    detalle = line.replace("DETALLE:", "").strip()
-            return {"tipo": tipo, "detalle": detalle}
-        return {"tipo": "prenda", "detalle": caption or "imagen sin texto"}
+                    parsed["tipo"] = line.replace("TIPO:", "").strip().lower()
+                elif line.startswith("ANIME:"):
+                    parsed["anime"] = line.replace("ANIME:", "").strip()
+                elif line.startswith("PRENDA:"):
+                    parsed["prenda"] = line.replace("PRENDA:", "").strip()
+            return parsed
+        return {"tipo": "prenda", "anime": "no identificado", "prenda": caption or "prenda"}
 
     async def send_reply(self, channel_user_id: str, message: OutboundMessage) -> None:
         evo_url = os.getenv("EVOLUTION_URL", "")
         evo_key = os.getenv("EVOLUTION_API_KEY", "")
         instance = os.getenv("EVOLUTION_INSTANCE", "demo")
-        owner = os.getenv("OWNER_NUMBER", "573043898187")
         if not evo_url:
             print("[WhatsApp] ERROR: EVOLUTION_URL no configurado")
             return

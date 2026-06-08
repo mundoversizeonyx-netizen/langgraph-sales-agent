@@ -21,24 +21,29 @@ async def process_message(payload: dict):
         if has_image:
             analysis = await adapter.analyze_client_image(payload)
             tipo = analysis.get("tipo", "otro")
-            detalle = analysis.get("detalle", "")
-            print(f"[Router] Imagen analizada - tipo: {tipo} | detalle: {detalle}")
+            anime = analysis.get("anime", "")
+            prenda = analysis.get("prenda", "")
+            print(f"[Router] Imagen - tipo: {tipo} | anime: {anime} | prenda: {prenda}")
 
             if tipo == "comprobante":
                 await adapter.notify_owner(inbound.channel_user_id, "envio comprobante de pago")
-                reply = "Listo, recibido el comprobante. Tu pedido queda registrado y lo despachamos en 4 dias habiles, te avisamos cuando salga."
+                reply = "Listo, comprobante recibido. Tu pedido queda registrado y lo despachamos en 4 dias habiles, te avisamos cuando salga."
                 await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply))
                 return
 
-            if tipo == "prenda":
-                context = f"El cliente envio una imagen de una prenda. Lo que Gemini identifico en la imagen: {detalle}. "
-                if client_text:
-                    context += f"El cliente tambien escribio: {client_text}. "
-                context += "Usa esta informacion para asesorar al cliente sobre el producto de ONYX mas similar o confirmar su pedido si ya eligio talla."
+            if tipo in ("oversized", "polo", "buso"):
+                anime_info = f"anime identificado: {anime}" if anime and anime != "no identificado" else "anime no identificado en la imagen"
+                context = (
+                    f"El cliente envio una imagen de una prenda tipo {prenda}. "
+                    f"Gemini identifico: {anime_info}. "
+                    f"{'El cliente escribio: ' + client_text + '. ' if client_text else ''}"
+                    f"Pregunta al cliente que talla quiere para confirmar el pedido. "
+                    f"No envies links de Drive. No inventes informacion."
+                )
                 user_input = context
             else:
                 if not client_text:
-                    reply = "Recibido, pero no logre identificar bien la imagen. Cuentame que prenda te interesa y en que talla."
+                    reply = "No logre identificar la imagen. Cuentame que prenda te interesa de ONYX."
                     await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply))
                     return
                 user_input = client_text
@@ -47,7 +52,7 @@ async def process_message(payload: dict):
                 return
             user_input = inbound.text
 
-        print(f"[Router] Procesando: {user_input[:100]}")
+        print(f"[Router] Input: {user_input[:120]}")
         result = await graph.ainvoke(
             {"messages": [("user", user_input)]},
             config={"configurable": {"thread_id": inbound.thread_id, "tenant_id": inbound.tenant_id}}
@@ -67,12 +72,10 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks, e
     event = payload.get("event", "") or event_name.replace("-", ".")
     if event != "messages.upsert":
         return {"status": "ignored"}
-    from_me = payload.get("data", {}).get("key", {}).get("fromMe", False)
-    if from_me:
+    if payload.get("data", {}).get("key", {}).get("fromMe", False):
         return {"status": "ignored"}
     msg_id = payload.get("data", {}).get("key", {}).get("id", "")
     if msg_id and msg_id in _processed:
-        print(f"[Router] Duplicado ignorado: {msg_id}")
         return {"status": "ignored"}
     if msg_id:
         _processed.add(msg_id)

@@ -57,11 +57,14 @@ class WhatsAppAdapter(ChannelAdapter):
             os.getenv("GEMINI_API_KEY_2", "")
         ]
         prompt = (
-            "Eres un experto en anime y moda. Analiza esta imagen y responde en una sola linea con este formato exacto:\n"
-            "TIPO: [comprobante | prenda | otro]\n"
-            "DETALLE: [si es prenda describe el personaje o anime que ves; si es comprobante di 'pago'; si es otro di 'no relacionado']\n"
+            "Eres un experto en anime y estampados de ropa. "
+            "Analiza EXCLUSIVAMENTE el estampado o print de la prenda en la imagen. "
+            "Ignora el fondo, el modelo, colores de tela, entorno. Solo el estampado y el tipo de prenda. "
+            "Responde UNICAMENTE en este formato exacto (dos lineas, nada mas):\n"
+            "TIPO: [oversized | polo | buso | comprobante | otro]\n"
+            "ANIME: [nombre exacto del personaje y serie anime del estampado, o 'no identificado' si no hay anime visible]\n"
             f"Texto del cliente: '{caption}'\n"
-            "Responde SOLO las dos lineas del formato. Nada mas."
+            "Sé preciso con el anime: distingue Naruto de Dragon Ball Z de One Piece de Demon Slayer etc."
         )
         body = {
             "contents": [{"parts": [

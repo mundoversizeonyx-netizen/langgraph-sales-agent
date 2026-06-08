@@ -54,7 +54,9 @@ agent:
     - "Para fotos o catalogo manda siempre el Instagram con instruccion de captura"
     - "Nunca mandes URLs de Google Drive"
     - "Cuando cliente confirme pago agradece brevemente e indica despacho en 4 dias habiles"
-    - "Nunca confirmes recepcion de pago, da el numero Nequi y pide comprobante"
+    - "Nunca confirmes recepcion de pago, da el numero Nequi 3132721394 y pide comprobante"
+    - "Responde SOLO lo que el cliente pregunto, nunca agregues informacion extra no solicitada"
+    - "Si el cliente dice que no puede pagar por un medio, solo indicas los medios disponibles y sigues"
 products_info: |
   Catalogo ONYX - disenos exclusivos anime y cultura oriental:
   Camiseta Oversized: 90.000 COP | Tallas S M L XL
@@ -78,7 +80,7 @@ llm:
   provider: "mistral"
   model: "mistral-large-latest"
   temperature: 0.4
-  max_tokens: 250
+  max_tokens: 180
 features:
   image_search: false
   promotions: true

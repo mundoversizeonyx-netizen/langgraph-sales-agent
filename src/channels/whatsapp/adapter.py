@@ -74,7 +74,12 @@ class WhatsAppAdapter(ChannelAdapter):
         return None, mime
 
     async def _gemini_analyze(self, image_b64: str, mime: str, caption: str) -> dict:
-        keys = [os.getenv("GEMINI_API_KEY", ""), os.getenv("GEMINI_API_KEY_2", "")]
+        keys = [
+            os.getenv("GEMINI_API_KEY", ""),
+            os.getenv("GEMINI_API_KEY_2", ""),
+            os.getenv("GEMINI_API_KEY_3", ""),
+            os.getenv("GEMINI_API_KEY_4", "")
+        ]
         prompt = (
             "PASO 1: Lee todo el texto visible en esta imagen usando OCR completo.\n"
             "PASO 2: Determina el tipo de imagen segun el texto y contenido visual.\n\n"

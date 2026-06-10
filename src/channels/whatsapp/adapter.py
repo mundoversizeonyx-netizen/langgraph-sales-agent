@@ -57,7 +57,7 @@ class WhatsAppAdapter(ChannelAdapter):
                     headers={"apikey": evo_key, "Content-Type": "application/json"}
                 )
                 print(f"[Download] Status: {r.status_code} | msg_id: {msg_id}")
-                if r.status_code == 200:
+                if r.status_code in (200, 201):
                     resp = r.json()
                     b64 = resp.get("base64", "") or resp.get("data", "")
                     if b64:
@@ -102,7 +102,7 @@ class WhatsAppAdapter(ChannelAdapter):
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={k}"
                 async with httpx.AsyncClient(timeout=20) as client:
                     r = await client.post(url, json=body)
-                    if r.status_code == 200:
+                    if r.status_code in (200, 201):
                         out = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                         print(f"[Gemini] Resultado: {out}")
                         parsed = {"tipo": "otro", "nequi_ok": False, "monto": "", "anime": "no identificado", "prenda": "prenda"}

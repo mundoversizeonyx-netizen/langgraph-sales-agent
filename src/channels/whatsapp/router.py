@@ -64,7 +64,16 @@ async def process_message(payload: dict):
         else:
             if not inbound.text or not inbound.text.strip():
                 return
-            user_input = inbound.text
+            text_lower = inbound.text.lower()
+            payment_hints = ["comprobante", "te envio", "ya pague", "hice el pago", "transferencia", "te mando el pago", "envio el pago"]
+            if any(w in text_lower for w in payment_hints):
+                user_input = (
+                    "El cliente dice que ya realizo el pago o va a enviar el comprobante. "
+                    "Confirma que lo recibes con atencion y pidele que adjunte la imagen del comprobante directamente en este chat si aun no lo ha hecho. "
+                    "Una sola oracion, sin markdown, sin asteriscos."
+                )
+            else:
+                user_input = inbound.text
 
         print(f"[Router] Input: {user_input[:120]}")
         result = await graph.ainvoke(

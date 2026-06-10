@@ -76,23 +76,27 @@ class WhatsAppAdapter(ChannelAdapter):
     async def _gemini_analyze(self, image_b64: str, mime: str, caption: str) -> dict:
         keys = [os.getenv("GEMINI_API_KEY", ""), os.getenv("GEMINI_API_KEY_2", "")]
         prompt = (
-            "Analiza esta imagen con maxima precision.\n\n"
-            "CASO 1 - COMPROBANTE DE PAGO: Si ves transferencia exitosa, recibo bancario, pantalla Nequi/Bancolombia/pago, comprobante:\n"
+            "PASO 1: Lee todo el texto visible en esta imagen usando OCR completo.\n"
+            "PASO 2: Determina el tipo de imagen segun el texto y contenido visual.\n\n"
+            "Si el texto contiene palabras como: Transferencia exitosa, Transferencia Exitosa, Comprobante, "
+            "Valor de la transferencia, Datos de la transferencia, Nequi, Bancolombia, pesos, COP, "
+            "numero de comprobante, producto destino, o cualquier monto en pesos colombianos:\n"
             "TIPO: comprobante\n"
-            f"NEQUI_OK: si (solo si ves el numero {NEQUI_NUMBER} en la imagen) o no\n"
-            "MONTO: [valor exacto en numeros que aparece en la imagen, ej: 90000]\n"
+            f"NEQUI_OK: si (solo si el numero {NEQUI_NUMBER} aparece literalmente en la imagen) o no\n"
+            "MONTO: [extrae el valor exacto en numeros del monto de la transferencia, ej: 150000]\n"
             "ANIME: ninguno\n"
             "PRENDA: ninguna\n\n"
-            "CASO 2 - PRENDA DE ROPA: Si ves una camiseta, buso, polo con estampado:\n"
+            "Si el texto NO es de pago y la imagen muestra ropa con estampado de anime:\n"
             "TIPO: prenda\n"
             "NEQUI_OK: no\n"
             "MONTO: ninguno\n"
-            "ANIME: [nombre exacto del personaje y serie del estampado, o 'no identificado']\n"
+            "ANIME: [personaje y serie exactos del estampado, o 'no identificado']\n"
             "PRENDA: [oversized | polo | buso]\n\n"
-            "CASO 3 - OTRA COSA:\n"
+            "Si no es ninguno de los dos casos anteriores:\n"
             "TIPO: otro\nNEQUI_OK: no\nMONTO: ninguno\nANIME: ninguno\nPRENDA: ninguna\n\n"
-            f"Caption del cliente: '{caption}'\n"
-            "Responde UNICAMENTE las 5 lineas. Sin explicacion adicional."
+            f"Texto adicional del cliente: '{caption}'\n"
+            "IMPORTANTE: Si hay CUALQUIER indicador de transferencia bancaria o pago, es SIEMPRE comprobante.\n"
+            "Responde UNICAMENTE las 5 lineas del formato. Sin explicacion."
         )
         body = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime, "data": image_b64}}]}]}
         for k in keys:
@@ -138,6 +142,7 @@ class WhatsAppAdapter(ChannelAdapter):
             result = await self._gemini_analyze(image_b64, mime, caption)
             if result["tipo"] == "otro" and any(w in caption_lower for w in payment_words):
                 result["tipo"] = "comprobante"
+                result["nequi_ok"] = NEQUI_NUMBER in caption
             return result
         print("[Analyze] No se pudo descargar la imagen, usando fallback por caption")
         if any(w in caption_lower for w in payment_words):

@@ -72,22 +72,27 @@ class WhatsAppAdapter(ChannelAdapter):
 
     def _build_prompt(self) -> str:
         return (
-            "Analiza esta imagen con OCR completo. Lee todo el texto visible.\n\n"
-            "Si la imagen muestra transferencia bancaria, recibo de pago, pantalla Nequi, Bancolombia, valor en pesos colombianos, o cualquier comprobante de pago:\n"
+            "Eres un experto en moda y pagos bancarios colombianos. Analiza esta imagen.\n\n"
+            "PASO 1 - LEE TODO EL TEXTO VISIBLE EN LA IMAGEN.\n"
+            "PASO 2 - DETERMINA EL TIPO:\n\n"
+            "Si ves palabras como: Transferencia exitosa, Comprobante, Bancolombia, Nequi, Valor de la transferencia, pesos, COP, recibo, numero de comprobante, producto destino:\n"
             "TIPO: comprobante\n"
-            "NEQUI_OK: si (solo si el numero " + NEQUI_NUMBER + " aparece en la imagen) o no\n"
-            "MONTO: [valor exacto visible en la imagen, ej: 150000]\n"
+            "NEQUI_OK: si (si el numero " + NEQUI_NUMBER + " aparece en la imagen) o no\n"
+            "MONTO: [extrae el valor numerico exacto visible, cualquier monto, ej: 90000 o 130000 o 180000]\n"
             "ANIME: ninguno\n"
             "PRENDA: ninguna\n\n"
-            "Si la imagen muestra ropa con estampado de anime (camiseta, buso, polo):\n"
+            "Si ves una prenda de ropa:\n"
+            "- Camiseta oversized: es ancha, suelta, cuello redondo, mangas cortas, caida amplia\n"
+            "- Camiseta polo: tiene cuello con solapas/botones tipo polo, puede tener rayas\n"
+            "- Buso/hoodie: tiene capucha o es de manga larga tipo sudadera sin cierre\n"
             "TIPO: prenda\n"
             "NEQUI_OK: no\n"
             "MONTO: ninguno\n"
-            "ANIME: [personaje y serie exactos, o no identificado]\n"
+            "ANIME: [nombre del personaje y serie del estampado visible, o no identificado]\n"
             "PRENDA: [oversized | polo | buso]\n\n"
-            "Cualquier otra cosa:\n"
+            "Si es otra cosa:\n"
             "TIPO: otro\nNEQUI_OK: no\nMONTO: ninguno\nANIME: ninguno\nPRENDA: ninguna\n\n"
-            "Responde UNICAMENTE las 5 lineas. Nada mas."
+            "Responde SOLO 5 lineas con exactamente ese formato. Nada mas."
         )
 
     def _parse_result(self, text: str) -> dict:
@@ -218,17 +223,19 @@ class WhatsAppAdapter(ChannelAdapter):
                 print("[WhatsApp] OK: " + reply_text[:80])
 
     async def notify_owner(self, channel_user_id: str, motivo: str) -> None:
+        await self.notify_owner_direct("ONYX ALERTA - Cliente " + channel_user_id + ": " + motivo)
+
+    async def notify_owner_direct(self, motivo: str) -> None:
         evo_url = os.getenv("EVOLUTION_URL", "")
         evo_key = os.getenv("EVOLUTION_API_KEY", "")
         instance = os.getenv("EVOLUTION_INSTANCE", "demo")
         owner = os.getenv("OWNER_NUMBER", "573043898187")
         if not evo_url:
             return
-        msg = "ONYX ALERTA - Cliente " + channel_user_id + ": " + motivo
         async with httpx.AsyncClient(timeout=15) as client:
             await client.post(
                 evo_url + "/message/sendText/" + instance,
-                json={"number": owner, "text": msg},
+                json={"number": owner, "text": motivo},
                 headers={"apikey": evo_key, "Content-Type": "application/json"}
             )
-            print("[WhatsApp] Alerta dueno enviada")
+            print("[WhatsApp] Alerta enviada al dueno: " + owner)

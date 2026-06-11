@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, BackgroundTasks
 from src.channels.whatsapp.adapter import WhatsAppAdapter
 from src.graphs.sales_graph import compile_sales_graph
 from src.models.message import OutboundMessage
-import traceback
+import traceback, re
 
 router = APIRouter()
 adapter = WhatsAppAdapter()
@@ -11,6 +11,14 @@ graph = compile_sales_graph()
 _processed = set()
 
 NEQUI_NUMBER = "3132721394"
+PRECIOS = {"oversized": 90000, "polo": 90000, "buso": 130000}
+NOMBRES = {"oversized": "camiseta oversized", "polo": "camiseta polo", "buso": "buso"}
+ANIME_INVALIDOS = ["ninguno", "no identificado", "ninguna", "personaje y serie no identificados", "ninguno identificado", "nada", "personaje original, no identificado", "personaje no identificado / serie no identificada", ""]
+
+def strip_markdown(text):
+    text = re.sub(r'\*+([^*]+)\*+', r'\1', text)
+    text = re.sub(r'_+([^_]+)_+', r'\1', text)
+    return text.strip()
 
 async def process_message(payload: dict):
     try:
@@ -19,7 +27,7 @@ async def process_message(payload: dict):
         has_image = bool(message.get("imageMessage") or message.get("documentMessage"))
         inbound = adapter.parse_webhook(payload)
         client_text = (inbound.text or "").replace("[IMAGEN_CLIENTE]", "").strip()
-        client_text_lower = client_text.lower()
+        text_lower = (inbound.text or "").lower()
 
         if has_image:
             analysis = await adapter.analyze_client_image(payload)
@@ -28,66 +36,75 @@ async def process_message(payload: dict):
             prenda = analysis.get("prenda", "")
             nequi_ok = analysis.get("nequi_ok", False)
             monto = analysis.get("monto", "")
-            print(f"[Router] Imagen - tipo:{tipo} anime:{anime} prenda:{prenda} nequi_ok:{nequi_ok} monto:{monto}")
+            print("[Router] Imagen - tipo:" + tipo + " anime:" + anime + " prenda:" + prenda + " nequi_ok:" + str(nequi_ok) + " monto:" + monto)
 
             if tipo == "comprobante":
+                cliente = inbound.channel_user_id
                 if nequi_ok:
-                    await adapter.notify_owner(
-                        inbound.channel_user_id,
-                        f"PAGO CONFIRMADO - Nequi {NEQUI_NUMBER} verificado. Monto: {monto}. Revisa el chat para procesar el pedido."
-                    )
-                    reply = "Perfecto, comprobante verificado al Nequi 3132721394. Tu pedido queda registrado y lo despachamos en 4 dias habiles, te avisamos cuando salga."
+                    msg_dueno = "PAGO CONFIRMADO - Cliente " + cliente + " - Nequi " + NEQUI_NUMBER + " verificado. Monto: " + monto + ". Procesar pedido."
+                    await adapter.notify_owner_direct(msg_dueno)
+                    reply = "Perfecto, comprobante verificado al Nequi 3132721394. Tu pedido queda registrado y te avisamos cuando salga en los proximos 4 dias habiles."
                 else:
-                    await adapter.notify_owner(
-                        inbound.channel_user_id,
-                        f"ALERTA - Cliente envio comprobante pero el numero Nequi no coincide con {NEQUI_NUMBER}. Revisar manualmente."
-                    )
-                    reply = "Recibo el comprobante, pero necesito verificar que el pago sea al Nequi 3132721394. Confirma que enviaste al numero correcto."
-                await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply))
+                    msg_dueno = "REVISION MANUAL - Cliente " + cliente + " envio comprobante pero Nequi no coincide con " + NEQUI_NUMBER + ". Monto visible: " + monto
+                    await adapter.notify_owner_direct(msg_dueno)
+                    reply = "Recibo el comprobante, pero necesito confirmar que el pago fue al Nequi 3132721394. Verificalo y me cuentas."
+                await adapter.send_reply(cliente, OutboundMessage(text=reply))
                 return
 
             if tipo in ("oversized", "polo", "buso", "prenda"):
-                anime_info = f"personaje/anime identificado: {anime}" if anime and anime.lower() not in ("ninguno", "no identificado", "") else "anime no identificado en la imagen"
-                context = (
-                    f"El cliente envio una captura de una camiseta tipo {prenda}. "
-                    f"Gemini identifico: {anime_info}. "
-                    f"{'El cliente escribio: ' + client_text + '. ' if client_text else ''}"
-                    f"Pregunta la talla para confirmar el pedido. No ofrezcas enviar fotos. No uses markdown ni asteriscos."
-                )
+                tipo_prenda = prenda if prenda and prenda not in ("prenda", "ninguna", "") else "oversized"
+                precio = PRECIOS.get(tipo_prenda, 90000)
+                nombre_prenda = NOMBRES.get(tipo_prenda, "camiseta oversized")
+                anime_clean = anime if anime and anime.lower() not in ANIME_INVALIDOS else None
+                texto_extra = "El cliente ademas escribio: " + client_text + ". " if client_text else ""
+                if anime_clean:
+                    context = (
+                        "El cliente envio una imagen de una " + nombre_prenda + " con estampado de " + anime_clean + ". "
+                        + texto_extra
+                        + "Confirma el tipo de prenda y menciona el personaje para conectar con el cliente. "
+                        + "Dile que el precio es " + str(precio) + " COP con envio incluido y pregunta la talla (S M L XL). "
+                        + "Maximo 2 oraciones. Sin asteriscos ni markdown."
+                    )
+                else:
+                    context = (
+                        "El cliente envio una imagen de una " + nombre_prenda + ". "
+                        + texto_extra
+                        + "Confirma el tipo de prenda y dile que el precio es " + str(precio) + " COP con envio incluido. "
+                        + "Preguntale de que personaje o serie es el diseno para asesorarlo mejor. "
+                        + "Maximo 2 oraciones. Sin asteriscos ni markdown."
+                    )
                 user_input = context
             else:
                 if not client_text:
-                    reply = "Recibido, pero no identifique bien la imagen. Cual diseno te gusto del Instagram de ONYX?"
+                    reply = "No identifique bien la imagen. Cuentame que diseno de ONYX te gusto."
                     await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply))
                     return
                 user_input = client_text
+
         else:
             if not inbound.text or not inbound.text.strip():
                 return
-            text_lower = inbound.text.lower()
             payment_hints = ["comprobante", "te envio", "ya pague", "hice el pago", "transferencia", "te mando el pago", "envio el pago"]
             if any(w in text_lower for w in payment_hints):
                 user_input = (
-                    "El cliente dice que ya realizo el pago o va a enviar el comprobante. "
-                    "Confirma que lo recibes con atencion y pidele que adjunte la imagen del comprobante directamente en este chat si aun no lo ha hecho. "
-                    "Una sola oracion, sin markdown, sin asteriscos."
+                    "El cliente indica que va a enviar el comprobante de pago. "
+                    "Confirma que lo recibes y pidele que adjunte la imagen aqui en el chat. "
+                    "Una sola oracion natural, sin markdown."
                 )
             else:
                 user_input = inbound.text
 
-        print(f"[Router] Input: {user_input[:120]}")
+        print("[Router] Input: " + user_input[:120])
         result = await graph.ainvoke(
             {"messages": [("user", user_input)]},
             config={"configurable": {"thread_id": inbound.thread_id, "tenant_id": inbound.tenant_id}}
         )
-        reply_text = result["messages"][-1].content
-        import re
-        reply_text = re.sub(r'\*+([^*]+)\*+', r'\1', reply_text)
-        print(f"[Router] Respuesta: {reply_text[:100]}")
+        reply_text = strip_markdown(result["messages"][-1].content)
+        print("[Router] Respuesta: " + reply_text[:100])
         await adapter.send_reply(inbound.channel_user_id, OutboundMessage(text=reply_text))
 
     except Exception as e:
-        print(f"[Router] ERROR: {e}")
+        print("[Router] ERROR: " + str(e))
         print(traceback.format_exc())
 
 @router.post("")

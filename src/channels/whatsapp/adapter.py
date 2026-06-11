@@ -1,4 +1,4 @@
-"""WhatsApp adapter - OpenRouter vision principal, Gemini fallback."""
+"""WhatsApp adapter - Qwen VL via OpenRouter (vision OCR definitivo)."""
 from datetime import datetime, timezone
 import httpx, os, re
 
@@ -65,32 +65,32 @@ class WhatsAppAdapter(ChannelAdapter):
                         return b64, mime
                     print("[Download] Sin base64: " + str(list(resp.keys())))
                 else:
-                    print("[Download] Error: " + str(r.status_code))
+                    print("[Download] Error: " + str(r.status_code) + " " + r.text[:100])
         except Exception as e:
             print("[Download] Excepcion: " + str(e))
         return None, mime
 
     def _build_prompt(self) -> str:
         return (
-            "Analiza esta imagen. Determina si es comprobante de pago o prenda de ropa.\n\n"
-            "Si ves transferencia bancaria, recibo, pantalla Nequi, Bancolombia, valor en pesos:\n"
+            "Analiza esta imagen con OCR completo. Lee todo el texto visible.\n\n"
+            "Si la imagen muestra transferencia bancaria, recibo de pago, pantalla Nequi, Bancolombia, valor en pesos colombianos, o cualquier comprobante de pago:\n"
             "TIPO: comprobante\n"
-            "NEQUI_OK: si (solo si aparece el numero " + NEQUI_NUMBER + ") o no\n"
-            "MONTO: [valor exacto visible]\n"
+            "NEQUI_OK: si (solo si el numero " + NEQUI_NUMBER + " aparece en la imagen) o no\n"
+            "MONTO: [valor exacto visible en la imagen, ej: 150000]\n"
             "ANIME: ninguno\n"
             "PRENDA: ninguna\n\n"
-            "Si ves camiseta, buso o polo con estampado de anime:\n"
+            "Si la imagen muestra ropa con estampado de anime (camiseta, buso, polo):\n"
             "TIPO: prenda\n"
             "NEQUI_OK: no\n"
             "MONTO: ninguno\n"
-            "ANIME: [personaje y serie del estampado, o no identificado]\n"
+            "ANIME: [personaje y serie exactos, o no identificado]\n"
             "PRENDA: [oversized | polo | buso]\n\n"
-            "Otra cosa:\n"
+            "Cualquier otra cosa:\n"
             "TIPO: otro\nNEQUI_OK: no\nMONTO: ninguno\nANIME: ninguno\nPRENDA: ninguna\n\n"
-            "Responde SOLO las 5 lineas. Nada mas."
+            "Responde UNICAMENTE las 5 lineas. Nada mas."
         )
 
-    def _parse_vision_response(self, text: str) -> dict:
+    def _parse_result(self, text: str) -> dict:
         parsed = {"tipo": "otro", "nequi_ok": False, "monto": "", "anime": "no identificado", "prenda": "prenda"}
         for line in text.strip().split("\n"):
             line = line.strip()
@@ -106,85 +106,60 @@ class WhatsAppAdapter(ChannelAdapter):
                 parsed["prenda"] = line.replace("PRENDA:", "").strip().lower()
         return parsed
 
-    async def _openrouter_analyze(self, image_b64: str, mime: str) -> dict:
+    async def _vision_analyze(self, image_b64: str, mime: str) -> dict:
         or_key = os.getenv("OPENROUTER_API_KEY", "")
         if not or_key:
-            print("[OpenRouter] No hay key configurada")
+            print("[Vision] ERROR: Sin OPENROUTER_API_KEY")
             return None
         prompt = self._build_prompt()
-        body = {
-            "model": "google/gemini-2.0-flash-exp:free",
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": "data:" + mime + ";base64," + image_b64}}
-                ]
-            }]
-        }
-        try:
-            print("[OpenRouter] Llamando gemini-2.0-flash-exp:free...")
-            async with httpx.AsyncClient(timeout=30) as client:
-                r = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    json=body,
-                    headers={
-                        "Authorization": "Bearer " + or_key,
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "https://onyx.store",
-                        "X-Title": "ONYX Sofia"
-                    }
-                )
-                print("[OpenRouter] Status: " + str(r.status_code))
-                if r.status_code == 200:
-                    out = r.json()["choices"][0]["message"]["content"].strip()
-                    print("[OpenRouter] Resultado: " + out)
-                    return self._parse_vision_response(out)
-                else:
-                    print("[OpenRouter] Error: " + r.text[:300])
-                    return None
-        except Exception as e:
-            print("[OpenRouter] Excepcion: " + str(e))
-            return None
-
-    async def _gemini_analyze(self, image_b64: str, mime: str) -> dict:
-        keys = [
-            os.getenv("GEMINI_API_KEY", ""),
-            os.getenv("GEMINI_API_KEY_2", ""),
-            os.getenv("GEMINI_API_KEY_3", ""),
-            os.getenv("GEMINI_API_KEY_4", ""),
-            os.getenv("GEMINI_API_KEY_5", ""),
-            os.getenv("GEMINI_API_KEY_6", "")
+        data_uri = "data:" + mime + ";base64," + image_b64
+        models = [
+            "qwen/qwen2.5-vl-72b-instruct:free",
+            "qwen/qwen2.5-vl-32b-instruct:free",
+            "meta-llama/llama-4-maverick:free",
+            "google/gemma-3-27b-it:free"
         ]
-        keys = [k for k in keys if k]
-        print("[Gemini] Keys: " + str(len(keys)))
-        prompt = self._build_prompt()
-        body = {
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inline_data": {"mime_type": mime, "data": image_b64}}
-                ]
-            }]
-        }
-        for k in keys:
+        for model in models:
             try:
-                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + k
-                print("[Gemini] Llamando key: " + k[:15] + "...")
-                async with httpx.AsyncClient(timeout=25) as client:
-                    r = await client.post(url, json=body)
-                    print("[Gemini] Status: " + str(r.status_code))
-                    if r.status_code in (200, 201):
-                        out = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                        print("[Gemini] Resultado: " + out)
-                        return self._parse_vision_response(out)
+                body = {
+                    "model": model,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": data_uri}}
+                        ]
+                    }],
+                    "max_tokens": 150
+                }
+                print("[Vision] Llamando: " + model)
+                async with httpx.AsyncClient(timeout=30) as client:
+                    r = await client.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        json=body,
+                        headers={
+                            "Authorization": "Bearer " + or_key,
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "https://onyx.store",
+                            "X-Title": "ONYX Sofia"
+                        }
+                    )
+                    print("[Vision] Status: " + str(r.status_code))
+                    if r.status_code == 200:
+                        resp = r.json()
+                        out = resp["choices"][0]["message"]["content"].strip()
+                        print("[Vision] Resultado: " + out)
+                        return self._parse_result(out)
                     elif r.status_code == 429:
-                        print("[Gemini] 429 siguiente key...")
+                        print("[Vision] 429 en " + model + ", probando siguiente...")
                         continue
                     else:
-                        print("[Gemini] Error: " + r.text[:200])
+                        print("[Vision] Error " + str(r.status_code) + ": " + r.text[:200])
+                        continue
             except Exception as e:
-                print("[Gemini] Excepcion: " + str(e))
+                print("[Vision] Excepcion en " + model + ": " + str(e))
+                continue
+        print("[Vision] Todos los modelos fallaron")
         return None
 
     async def analyze_client_image(self, raw: dict) -> dict:
@@ -193,33 +168,29 @@ class WhatsAppAdapter(ChannelAdapter):
         caption = message.get("imageMessage", {}).get("caption", "")
         caption_lower = caption.lower()
         payment_words = ["transferencia", "comprobante", "ya pague", "hice el pago", "realice el pago", "transferi", "te mando", "pague", "envio el pago"]
-        fallback = {"tipo": "prenda", "nequi_ok": False, "monto": "", "anime": "no identificado", "prenda": "prenda"}
+        fallback_pago = {"tipo": "comprobante", "nequi_ok": NEQUI_NUMBER in caption, "monto": "", "anime": "ninguno", "prenda": "ninguna"}
+        fallback_prenda = {"tipo": "prenda", "nequi_ok": False, "monto": "", "anime": "no identificado", "prenda": "prenda"}
 
         image_b64, mime = await self._download_image(raw)
         if not image_b64:
-            print("[Analyze] Sin imagen, fallback caption")
+            print("[Analyze] Sin imagen descargada")
             if any(w in caption_lower for w in payment_words):
-                return {"tipo": "comprobante", "nequi_ok": NEQUI_NUMBER in caption, "monto": "", "anime": "ninguno", "prenda": "ninguna"}
-            return fallback
+                return fallback_pago
+            return fallback_prenda
 
-        # OpenRouter primero
-        result = await self._openrouter_analyze(image_b64, mime)
-
-        # Gemini como fallback
-        if result is None:
-            print("[Analyze] OpenRouter fallo, intentando Gemini...")
-            result = await self._gemini_analyze(image_b64, mime)
+        result = await self._vision_analyze(image_b64, mime)
 
         if result is None:
-            print("[Analyze] Todo fallo, fallback caption")
+            print("[Analyze] Vision fallo, usando fallback caption")
             if any(w in caption_lower for w in payment_words):
-                return {"tipo": "comprobante", "nequi_ok": NEQUI_NUMBER in caption, "monto": "", "anime": "ninguno", "prenda": "ninguna"}
-            return fallback
+                return fallback_pago
+            return fallback_prenda
 
         if result["tipo"] == "otro" and any(w in caption_lower for w in payment_words):
             result["tipo"] = "comprobante"
             result["nequi_ok"] = NEQUI_NUMBER in caption
 
+        print("[Analyze] Final: " + str(result))
         return result
 
     async def send_reply(self, channel_user_id: str, message: OutboundMessage) -> None:

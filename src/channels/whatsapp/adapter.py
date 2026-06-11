@@ -114,10 +114,10 @@ class WhatsAppAdapter(ChannelAdapter):
         prompt = self._build_prompt()
         data_uri = "data:" + mime + ";base64," + image_b64
         models = [
-            "qwen/qwen2.5-vl-72b-instruct:free",
-            "qwen/qwen2.5-vl-32b-instruct:free",
-            "meta-llama/llama-4-maverick:free",
-            "google/gemma-3-27b-it:free"
+            "nvidia/nemotron-nano-12b-v2-vl:free",
+            "google/gemma-4-31b-it:free",
+            "mistralai/mistral-small-3.1-24b-instruct:free",
+            "moonshotai/kimi-vl-a3b-thinking:free"
         ]
         for model in models:
             try:

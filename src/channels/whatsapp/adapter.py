@@ -91,19 +91,24 @@ class WhatsAppAdapter(ChannelAdapter):
         )
 
     def _parse_result(self, text: str) -> dict:
+        import re
         parsed = {"tipo": "otro", "nequi_ok": False, "monto": "", "anime": "no identificado", "prenda": "prenda"}
+        # Normaliza: reemplaza separadores inline por saltos de linea
+        text = re.sub(r"\s+(TIPO:|NEQUI_OK:|NEQUI:|NEQUI\.OK:|MONTO:|ANIME:|PRENDA:)", r"\n\1", text)
+        text = re.sub(r"[Nn][Ee][Qq][Uu][Ii][_\s]?[Oo][Kk]:", "NEQUI_OK:", text)
         for line in text.strip().split("\n"):
             line = line.strip()
-            if line.startswith("TIPO:"):
-                parsed["tipo"] = line.replace("TIPO:", "").strip().lower()
-            elif line.startswith("NEQUI_OK:"):
-                parsed["nequi_ok"] = "si" in line.replace("NEQUI_OK:", "").strip().lower()
-            elif line.startswith("MONTO:"):
-                parsed["monto"] = line.replace("MONTO:", "").strip()
-            elif line.startswith("ANIME:"):
-                parsed["anime"] = line.replace("ANIME:", "").strip()
-            elif line.startswith("PRENDA:"):
-                parsed["prenda"] = line.replace("PRENDA:", "").strip().lower()
+            if line.upper().startswith("TIPO:"):
+                parsed["tipo"] = line.split(":", 1)[1].strip().lower()
+            elif line.upper().startswith("NEQUI_OK:"):
+                parsed["nequi_ok"] = "si" in line.split(":", 1)[1].strip().lower()
+            elif line.upper().startswith("MONTO:"):
+                val = line.split(":", 1)[1].strip()
+                parsed["monto"] = val if val.lower() not in ("ninguno", "none", "") else ""
+            elif line.upper().startswith("ANIME:"):
+                parsed["anime"] = line.split(":", 1)[1].strip()
+            elif line.upper().startswith("PRENDA:"):
+                parsed["prenda"] = line.split(":", 1)[1].strip().lower()
         return parsed
 
     async def _vision_analyze(self, image_b64: str, mime: str) -> dict:
